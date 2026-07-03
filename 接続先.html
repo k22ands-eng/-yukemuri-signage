@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>サイネージプレイヤー v0.2</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; background: #000; color: #fff;
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; overflow: hidden; }
+  #video, #image { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #image { position: fixed; inset: 0; }
+  .center { position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px; background: #000; }
+  .code { font-size: 72px; font-weight: 800; letter-spacing: 12px; color: #7dd3fc; }
+  .sub { font-size: 16px; color: #94a3b8; line-height: 1.8; }
+  input { padding: 12px; font-size: 15px; border-radius: 8px; border: none; width: min(480px, 90vw); }
+  button { padding: 12px 28px; font-size: 15px; border: none; border-radius: 8px;
+    background: #0e7490; color: #fff; cursor: pointer; }
+  #fsBtn { position: fixed; right: 14px; bottom: 14px; opacity: .35; padding: 8px 14px; font-size: 12px; z-index: 10; }
+  #status { position: fixed; left: 14px; bottom: 14px; font-size: 11px; color: #64748b; z-index: 10; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="center" id="setup" hidden>
+  <div style="font-size:20px;font-weight:700">プレイヤー接続設定</div>
+  <input id="cfgUrl" placeholder="Supabase Project URL（https://xxxx.supabase.co）">
+  <input id="cfgKey" placeholder="publishable キー">
+  <button onclick="saveCfg()">接続する</button>
+</div>
+
+<div class="center" id="pairing" hidden>
+  <div style="font-size:18px;color:#94a3b8">端末登録コード</div>
+  <div class="code" id="pairCode">------</div>
+  <div class="sub">管理画面の「端末を登録」でこのコードを入力してください。<br>登録が完了すると自動で放映が始まります。</div>
+</div>
+
+<div class="center" id="standby" hidden>
+  <div style="font-size:22px;font-weight:700" id="standbyName">放映待機中</div>
+  <div class="sub">管理画面で編成を作成し「保存して配信」を押してください。</div>
+</div>
+
+<video id="video" muted playsinline hidden></video>
+<img id="image" hidden alt="">
+<button id="fsBtn" onclick="document.documentElement.requestFullscreen()">全画面</button>
+<div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const $ = id => document.getElementById(id);
+// ==== 接続設定（設定済みファイルではここに値が入る） ====
+const EMB_U = 'https://fgwtwcdoiibdwxtgyxkf.supabase.co'; const EMB_K = 'sb_publishable_Hu4GqsEYQ_nmJ9IuAB00rQ_A7uOClIM';
+// localStorage が使えない環境（file直開き等）でも動くための安全ラッパー
+const store = (() => { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return localStorage; }
+  catch(e){ const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k,v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } }; } })();
+
+const SYNC_MS = 20000;
+let sb = null, deviceId = null, queue = [], idx = 0, playing = false, imgTimer = null;
+
+function loadCfg() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('u') && h.get('k')) {
+    store.setItem('sb_url', h.get('u')); store.setItem('sb_key', h.get('k'));
+    try { history.replaceState(null, '', location.pathname); } catch(e){}
+  }
+  const u = store.getItem('sb_url') || EMB_U, k = store.getItem('sb_key') || EMB_K;
+  if (!u || !k) { $('setup').hidden = false; return false; }
+  sb = window.supabase.createClient(u, k);
+  return true;
+}
+function saveCfg() {
+  store.setItem('sb_url', $('cfgUrl').value.trim().replace(/\/$/, ''));
+  store.setItem('sb_key', $('cfgKey').value.trim());
+  location.reload();
+}
+
+// ---- ペアリング（安全な専用API経由） ----
+async function ensureDevice() {
+  deviceId = store.getItem('device_id');
+  let pairCode = null;
+  if (deviceId) {
+    const { data } = await sb.rpc('device_sync', { dev_id: deviceId });
+    if (data && data.found && data.name) return true;
+    if (!data || !data.found) { store.removeItem('device_id'); deviceId = null; }
+    else pairCode = data.pair_code;
+  }
+  if (!deviceId) {
+    const { data, error } = await sb.rpc('register_device');
+    if (error || !data || !data.id) { $('status').textContent = '接続エラー: ' + (error ? error.message : '登録失敗'); return false; }
+    deviceId = data.id;
+    store.setItem('device_id', deviceId);
+    pairCode = data.pair_code;
+  }
+  $('pairCode').textContent = pairCode || '------';
+  $('pairing').hidden = false;
+  return await new Promise(res => {
+    const t = setInterval(async () => {
+      const { data } = await sb.rpc('device_sync', { dev_id: deviceId });
+      if (data && data.found && data.name) { clearInterval(t); $('pairing').hidden = true; res(true); }
+    }, 5000);
+  });
+}
+
+// ---- 時間帯 ----
+function currentSlot() {
+  const h = new Date().getHours();
+  return (h >= 6 && h < 11) ? 'morning' : (h >= 11 && h < 17) ? 'day' : 'night';
+}
+function activeIds(pl) {
+  if (!pl) return [];
+  if (Array.isArray(pl)) return pl;                       // 旧形式
+  const slot = pl.mode === 'slots' ? currentSlot() : 'all';
+  return pl[slot] || [];
+}
+
+// ---- 同期（＋死活報告・遠隔コマンド） ----
+async function sync() {
+  try {
+    const { data: dev } = await sb.rpc('device_sync', { dev_id: deviceId });
+    if (!dev || !dev.found) return;
+    if (dev.command === 'reload') { location.reload(); return; }
+    const ids = activeIds(dev.playlist);
+    let list = [];
+    if (ids.length) {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: cs } = await sb.from('contents').select('*').in('id', ids);
+      const byId = Object.fromEntries((cs || []).map(c => [c.id, c]));
+      list = ids.map(i => byId[i]).filter(c => c && (!c.expires || c.expires >= today));
+    }
+    queue = list;
+    $('standbyName').textContent = `${dev.name} / ${dev.place || ''} — 放映待機中`;
+    $('status').textContent = `${dev.name} ｜ 編成 ${list.length}本 ｜ 最終同期 ${new Date().toLocaleTimeString('ja-JP')}`;
+    if (!playing) playNext();
+  } catch (e) { $('status').textContent = '同期エラー（再試行します）'; }
+}
+
+// ---- 再生ループ（動画＋静止画） ----
+function logPlay(c) {
+  try { sb.rpc('log_play', { dev_id: deviceId, cid: c.id, ctitle: c.title }).then(() => {}); } catch (e) {}
+}
+function playNext() {
+  clearTimeout(imgTimer);
+  const v = $('video'), im = $('image');
+  if (!queue.length) {
+    playing = false; v.hidden = true; im.hidden = true; $('standby').hidden = false;
+    return;
+  }
+  $('standby').hidden = true; playing = true;
+  idx = idx % queue.length;
+  const c = queue[idx++];
+  logPlay(c);
+  if (c.type === 'image') {
+    v.pause(); v.hidden = true;
+    im.src = c.url; im.hidden = false;
+    imgTimer = setTimeout(playNext, (c.dur || 15) * 1000);
+  } else {
+    im.hidden = true; v.hidden = false;
+    v.src = c.url;
+    v.play().catch(() => {});
+  }
+}
+$('video').addEventListener('ended', playNext);
+$('video').addEventListener('error', () => setTimeout(playNext, 3000));
+$('image').addEventListener('error', () => { clearTimeout(imgTimer); setTimeout(playNext, 1000); });
+
+// ---- 起動 ----
+(async () => {
+  if (!loadCfg()) return;
+  if (!(await ensureDevice())) return;
+  await sync();
+  setInterval(sync, SYNC_MS);
+})();
+</script>
+</body>
+</html>

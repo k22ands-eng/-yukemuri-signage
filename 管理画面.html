@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>湯けむりサイネージCMS v0.2</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#1c2733; --sub:#6b7a8c; --brand:#0e7490;
+    --brand-soft:#e0f2f7; --line:#e3e7ec; --ok:#16a34a; --ng:#dc2626; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--ink); display: flex; min-height: 100vh; }
+  aside { width: 210px; background: #12303b; color: #cfe3ea; padding: 20px 0; flex-shrink: 0; }
+  aside h1 { font-size: 15px; padding: 0 20px 14px; color: #fff; border-bottom: 1px solid rgba(255,255,255,.12); }
+  aside h1 small { display: block; font-weight: normal; font-size: 11px; color: #8fb3bf; margin-top: 4px; }
+  aside nav button { display: block; width: 100%; text-align: left; padding: 12px 20px; background: none; border: none; color: #cfe3ea; font-size: 14px; cursor: pointer; }
+  aside nav button:hover { background: rgba(255,255,255,.06); }
+  aside nav button.active { background: var(--brand); color: #fff; font-weight: 600; }
+  main { flex: 1; padding: 24px 28px; max-width: 1100px; }
+  h2 { font-size: 18px; margin-bottom: 4px; }
+  .desc { font-size: 12px; color: var(--sub); margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--sub); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  .on { color: var(--ok); } .off { color: var(--ng); }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--brand-soft); color: var(--brand); }
+  input, select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; background: #fff; }
+  button.btn { padding: 8px 14px; border: none; border-radius: 6px; background: var(--brand); color: #fff; font-size: 13px; cursor: pointer; }
+  button.btn.ghost { background: #fff; color: var(--brand); border: 1px solid var(--brand); }
+  button.mini { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 5px; padding: 3px 8px; font-size: 12px; cursor: pointer; margin-left: 3px; }
+  button.mini:hover { background: var(--brand-soft); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .pl-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; font-size: 13px; background: #fff; }
+  .pl-item b { flex: 1; font-weight: 600; }
+  .num { width: 20px; height: 20px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .slot-tabs { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+  .slot-tabs button { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--line); background: #fff; font-size: 13px; cursor: pointer; }
+  .slot-tabs button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .linkbox { font-size: 12px; word-break: break-all; background: var(--brand-soft); padding: 10px; border-radius: 6px; margin-top: 8px; }
+  .tvframe { background: #000; border-radius: 12px; padding: 12px; max-width: 720px; }
+  .screen { position: relative; aspect-ratio: 16/9; border-radius: 4px; overflow: hidden; background: #000; }
+  .screen video, .screen img { width: 100%; height: 100%; object-fit: contain; }
+  .osd { position: absolute; left: 0; right: 0; bottom: 0; padding: 7px 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; display: flex; justify-content: space-between; }
+  .standby-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 14px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1c2733; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 99; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>湯けむりサイネージCMS<small>v0.2 — 東京から遠隔管理</small></h1>
+  <nav>
+    <button data-v="devices" class="active">📺 端末管理</button>
+    <button data-v="library">🎬 コンテンツ</button>
+    <button data-v="playlist">📋 編成</button>
+    <button data-v="preview">▶️ プレビュー</button>
+    <button data-v="logs">📊 放映ログ</button>
+  </nav>
+  <button id="logoutBtn" hidden onclick="logout()" style="display:block;width:calc(100% - 40px);margin:16px 20px;padding:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#cfe3ea;font-size:12px;cursor:pointer">ログアウト</button>
+</aside>
+
+<main>
+  <!-- 接続設定 -->
+  <section id="v-setup" hidden>
+    <h2>Supabase 接続設定（初回のみ）</h2>
+    <div class="card">
+      <div class="row"><input id="cfgUrl" placeholder="Project URL（https://xxxx.supabase.co）" style="width:380px"></div>
+      <div class="row"><input id="cfgKey" placeholder="publishable キー" style="width:380px"></div>
+      <button class="btn" onclick="saveCfg()">接続する</button>
+    </div>
+  </section>
+
+  <!-- ログイン -->
+  <section id="v-login" hidden>
+    <h2>ログイン</h2>
+    <p class="desc">管理者アカウントでログインしてください。</p>
+    <div class="card" style="max-width:420px">
+      <div class="row"><input id="liEmail" type="email" placeholder="メールアドレス" style="width:300px"></div>
+      <div class="row"><input id="liPass" type="password" placeholder="パスワード" style="width:300px" onkeydown="if(event.key==='Enter')login()"></div>
+      <button class="btn" onclick="login()">ログイン</button>
+      <p class="desc" id="liMsg" style="margin:10px 0 0"></p>
+    </div>
+  </section>
+
+  <!-- 端末管理 -->
+  <section id="v-devices" hidden>
+    <h2>端末管理</h2>
+    <p class="desc" id="connState">接続中…</p>
+    <div class="card">
+      <b style="font-size:13px">端末を登録（ペアリング）</b>
+      <p class="desc" style="margin-top:4px">現地端末でプレイヤーを開くと6桁コードが表示されます。それをここに入力してください。</p>
+      <div class="row">
+        <input id="pcode" placeholder="6桁コード" style="width:110px" maxlength="6">
+        <input id="pname" placeholder="施設名（例: 駿河の湯）" style="width:180px">
+        <input id="pplace" placeholder="設置場所（例: 脱衣所）" style="width:150px">
+        <button class="btn" onclick="claim()">登録する</button>
+      </div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>状態</th><th>施設</th><th>設置場所</th><th>編成</th><th>最終通信</th><th>操作</th></tr></thead>
+        <tbody id="devTable"><tr><td colspan="6" style="color:var(--sub)">読み込み中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- コンテンツ -->
+  <section id="v-library" hidden>
+    <h2>コンテンツ（動画・静止画）</h2>
+    <p class="desc">素材は「施設ごとの棚」か「🌐 共通（全施設で使える棚）」に入れて管理します。掲載期限が切れた素材は自動で放映から除外されます。</p>
+    <div class="card">
+      <div class="row">
+        <select id="vfac" title="どの棚に入れるか"></select>
+        <input type="file" id="vfile" accept="video/mp4,video/*,image/jpeg,image/png,image/*">
+        <input id="vtitle" placeholder="タイトル" style="width:150px">
+        <input id="vadv" placeholder="広告主 / 区分" style="width:120px">
+        <input type="date" id="vexp" title="掲載期限（空欄=無期限）">
+        <select id="vdur" title="静止画の表示秒数"><option value="10">10秒</option><option value="15" selected>15秒</option><option value="20">20秒</option><option value="30">30秒</option></select>
+        <button class="btn" onclick="upload()" id="upBtn">アップロード</button>
+      </div>
+      <p class="desc" style="margin:0">※表示秒数は静止画のみ。動画は実尺で再生されます。</p>
+    </div>
+    <div class="card">
+      <div class="slot-tabs" id="facTabs"></div>
+      <table>
+        <thead><tr><th>棚</th><th>種別</th><th>タイトル</th><th>広告主 / 区分</th><th>尺</th><th>掲載期限</th><th></th></tr></thead>
+        <tbody id="libTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 編成 -->
+  <section id="v-playlist" hidden>
+    <h2>編成（並び替え・差し替え・スケジュール）</h2>
+    <p class="desc">端末ごとに再生ループを組みます。保存すると20秒以内に現地端末へ反映されます。</p>
+    <div class="card">
+      <div class="row">
+        <label style="font-size:13px">端末:</label>
+        <select id="plDevice" onchange="switchDev()"></select>
+        <label style="font-size:13px;color:var(--sub)"><input type="checkbox" id="slotMode" onchange="toggleMode()"> 時間帯で編成を分ける</label>
+      </div>
+      <div class="slot-tabs" id="slotTabs"></div>
+      <div id="plItems"></div>
+      <div class="row" style="margin-top:10px">
+        <select id="addSelect"></select>
+        <button class="btn ghost" onclick="addToPl()">＋ 追加</button>
+        <span style="flex:1"></span>
+        <span id="loopInfo" style="font-size:12px;color:var(--sub)"></span>
+        <button class="btn" onclick="savePlaylist()">保存して配信</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- プレビュー -->
+  <section id="v-preview" hidden>
+    <h2>プレビュー</h2>
+    <p class="desc">選択した端末の現在の編成（保存済みの内容）を実際の素材で再生します。</p>
+    <div class="row">
+      <label style="font-size:13px">端末:</label>
+      <select id="pvDevice" onchange="startPreview()"></select>
+      <label style="font-size:13px">時間帯:</label>
+      <select id="pvSlot" onchange="startPreview()">
+        <option value="all">終日</option><option value="morning">朝 6-11</option><option value="day">昼 11-17</option><option value="night">夜 17-24</option>
+      </select>
+    </div>
+    <div class="tvframe">
+      <div class="screen">
+        <video id="pvVideo" muted playsinline hidden></video>
+        <img id="pvImage" hidden alt="">
+        <div class="standby-msg" id="pvMsg">端末を選択してください</div>
+        <div class="osd"><span id="pvLeft"></span><span id="pvRight"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 放映ログ -->
+  <section id="v-logs" hidden>
+    <h2>放映ログ</h2>
+    <p class="desc">端末が素材を再生するたびに記録されます。広告主への放映報告の元データです。</p>
+    <div class="card">
+      <b style="font-size:13px">素材別の放映回数（日本時間・全件集計）</b>
+      <table style="margin-top:8px">
+        <thead><tr><th>タイトル</th><th>本日</th><th>今月</th><th>先月</th></tr></thead>
+        <tbody id="logSummary"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <b style="font-size:13px">最新の放映履歴</b>
+      <table style="margin-top:8px">
+        <thead><tr><th>日時</th><th>端末</th><th>タイトル</th></tr></thead>
+        <tbody id="logTable"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const $ = id => document.getElementById(id);
+// ==== 接続設定（設定済みファイルではここに値が入る） ====
+const EMB_U = 'https://fgwtwcdoiibdwxtgyxkf.supabase.co'; const EMB_K = 'sb_publishable_Hu4GqsEYQ_nmJ9IuAB00rQ_A7uOClIM';
+const store = (() => { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return localStorage; }
+  catch(e){ const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k,v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } }; } })();
+
+let sb = null, devices = [], contents = [], logs = [], editPl = null, curSlot = 'all';
+
+function toast(m) { const t = $('toast'); t.textContent = m; t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2500); }
+
+// ---- 接続 ----
+function loadCfg() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('u') && h.get('k')) {
+    store.setItem('sb_url', h.get('u')); store.setItem('sb_key', h.get('k'));
+    try { history.replaceState(null, '', location.pathname); } catch(e){}
+  }
+  const u = store.getItem('sb_url') || EMB_U, k = store.getItem('sb_key') || EMB_K;
+  if (!u || !k) {
+    document.querySelectorAll('main section').forEach(s => s.hidden = true);
+    $('v-setup').hidden = false;
+    return false;
+  }
+  sb = window.supabase.createClient(u, k);
+  $('connState').textContent = '接続先: ' + u;
+  return true;
+}
+function saveCfg() {
+  store.setItem('sb_url', $('cfgUrl').value.trim().replace(/\/$/, ''));
+  store.setItem('sb_key', $('cfgKey').value.trim());
+  location.reload();
+}
+
+// ---- ナビ ----
+let authed = false;
+document.querySelectorAll('aside nav button').forEach(b => b.onclick = () => {
+  if (!authed) return;
+  document.querySelectorAll('aside nav button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelectorAll('main section').forEach(s => s.hidden = true);
+  $('v-' + b.dataset.v).hidden = false;
+  if (b.dataset.v === 'preview') startPreview(); else stopPreview();
+  if (b.dataset.v === 'logs') loadLogs();
+});
+function showOnly(id) {
+  document.querySelectorAll('main section').forEach(s => s.hidden = true);
+  $(id).hidden = false;
+}
+
+// ---- データ ----
+async function load() {
+  const [d, c] = await Promise.all([
+    sb.from('devices').select('*').order('created_at'),
+    sb.from('contents').select('*').order('created_at'),
+  ]);
+  if (d.error) { toast('読み込みエラー: ' + d.error.message); return; }
+  devices = (d.data || []).filter(x => x.name);
+  contents = c.data || [];
+  renderDevices(); renderLibrary(); renderPlaylist();
+}
+function plOf(d) {
+  const p = d.playlist;
+  if (Array.isArray(p)) return { mode: 'all', all: [...p], morning: [], day: [], night: [] };
+  return { mode: p?.mode || 'all', all: p?.all || [], morning: p?.morning || [], day: p?.day || [], night: p?.night || [] };
+}
+const today = () => new Date().toISOString().slice(0, 10);
+const isExpired = c => c.expires && c.expires < today();
+
+// ---- 端末 ----
+function renderDevices() {
+  const now = Date.now();
+  $('devTable').innerHTML = devices.map(d => {
+    const online = d.last_seen && (now - new Date(d.last_seen).getTime()) < 90000;
+    const pl = plOf(d);
+    const n = pl.mode === 'slots' ? `朝${pl.morning.length}/昼${pl.day.length}/夜${pl.night.length}` : `${pl.all.length}本`;
+    return `<tr>
+      <td class="${online?'on':'off'}">● ${online?'オンライン':'オフライン'}</td>
+      <td>${d.name}</td><td>${d.place || '-'}</td>
+      <td style="color:var(--sub)">${n}</td>
+      <td style="color:var(--sub)">${d.last_seen ? new Date(d.last_seen).toLocaleString('ja-JP') : '未通信'}</td>
+      <td>
+        <button class="mini" onclick="sendReload('${d.id}')" title="現地プレイヤーを再読み込み">🔄 再読込</button>
+        <button class="mini" onclick="delDevice('${d.id}')">削除</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--sub)">端末が未登録です。現地でプレイヤーを開き、上のフォームでコードを登録してください。</td></tr>';
+
+  ['plDevice', 'pvDevice'].forEach(sel => {
+    const cur = $(sel).value;
+    $(sel).innerHTML = devices.map(d => `<option value="${d.id}" ${d.id===cur?'selected':''}>${d.name} / ${d.place || '-'}</option>`).join('');
+  });
+}
+async function claim() {
+  const code = $('pcode').value.trim(), name = $('pname').value.trim(), place = $('pplace').value.trim();
+  if (!code || !name) { toast('コードと施設名を入力してください'); return; }
+  const { data, error } = await sb.from('devices').update({ name, place }).eq('pair_code', code).is('name', null).select();
+  if (error || !data.length) { toast('コードが見つかりません（端末側の表示を確認）'); return; }
+  toast('端末を登録しました。数秒で放映待機になります'); $('pcode').value = ''; editPl = null; load();
+}
+async function sendReload(id) {
+  const { error } = await sb.from('devices').update({ command: 'reload' }).eq('id', id);
+  toast(error ? 'エラー: ' + error.message : '再読み込みを指示しました（最大20秒で実行）');
+}
+async function delDevice(id) {
+  if (!confirm('この端末を削除しますか？')) return;
+  await sb.from('devices').delete().eq('id', id); editPl = null; load();
+}
+
+// ---- コンテンツ ----
+let curFac = '__all';
+function facNames() { return [...new Set(devices.map(d => d.name))].sort(); }
+function facLabel(c) { return c.facility ? c.facility : '🌐 共通'; }
+function renderLibrary() {
+  // アップロード先の棚セレクト
+  const selFac = $('vfac').value;
+  $('vfac').innerHTML = `<option value="">🌐 共通（全施設）</option>` +
+    facNames().map(n => `<option value="${n}" ${n===selFac?'selected':''}>${n}</option>`).join('');
+  // 棚タブ
+  const tabs = [['__all','全て'],['__common','🌐 共通'], ...facNames().map(n => [n, n])];
+  $('facTabs').innerHTML = tabs.map(([k,l]) =>
+    `<button class="${k===curFac?'active':''}" onclick="curFac='${k}';renderLibrary()">${l}</button>`).join('');
+  // 絞り込み
+  const list = contents.filter(c =>
+    curFac === '__all' ? true :
+    curFac === '__common' ? !c.facility :
+    c.facility === curFac);
+  $('libTable').innerHTML = list.map(c => `<tr>
+    <td style="color:var(--sub)">${facLabel(c)}</td>
+    <td><span class="tag">${c.type === 'image' ? '静止画' : '動画'}</span></td>
+    <td>${c.title}</td><td>${c.adv || '-'}</td>
+    <td style="color:var(--sub)">${c.type === 'image' ? (c.dur || 15) + '秒' : '実尺'}</td>
+    <td style="${isExpired(c) ? 'color:var(--ng);font-weight:600' : ''}">${c.expires || '無期限'}${isExpired(c) ? '（期限切れ・自動除外中）' : ''}</td>
+    <td><button class="mini" onclick="delContent('${c.id}')">削除</button></td>
+  </tr>`).join('') || '<tr><td colspan="7" style="color:var(--sub)">この棚には素材がありません。</td></tr>';
+}
+async function upload() {
+  const f = $('vfile').files[0];
+  if (!f) { toast('ファイルを選択してください'); return; }
+  const isImage = f.type.startsWith('image');
+  const title = $('vtitle').value.trim() || f.name;
+  $('upBtn').disabled = true; $('upBtn').textContent = 'アップロード中…';
+  try {
+    const path = Date.now() + '_' + f.name.replace(/[^\w.\-]/g, '_');
+    const { error: e1 } = await sb.storage.from('videos').upload(path, f);
+    if (e1) throw e1;
+    const { data: { publicUrl } } = sb.storage.from('videos').getPublicUrl(path);
+    const { error: e2 } = await sb.from('contents').insert({
+      title, adv: $('vadv').value.trim(), expires: $('vexp').value || null, url: publicUrl,
+      type: isImage ? 'image' : 'video', dur: isImage ? +$('vdur').value : null,
+      facility: $('vfac').value || null,
+    });
+    if (e2) throw e2;
+    toast('アップロード完了'); $('vfile').value = ''; $('vtitle').value = ''; load();
+  } catch (e) { toast('エラー: ' + e.message); }
+  $('upBtn').disabled = false; $('upBtn').textContent = 'アップロード';
+}
+async function delContent(id) {
+  if (!confirm('この素材を削除しますか？（各端末の編成からも外れます）')) return;
+  await sb.from('contents').delete().eq('id', id);
+  for (const d of devices) {
+    const pl = plOf(d);
+    let changed = false;
+    ['all','morning','day','night'].forEach(k => { const b = pl[k].length; pl[k] = pl[k].filter(x => x !== id); if (pl[k].length !== b) changed = true; });
+    if (changed || Array.isArray(d.playlist)) await sb.from('devices').update({ playlist: pl }).eq('id', d.id);
+  }
+  editPl = null; load();
+}
+
+// ---- 編成 ----
+function curDev() { return devices.find(d => d.id === $('plDevice').value) || devices[0]; }
+function switchDev() { editPl = null; renderPlaylist(); }
+function effSlot() { return editPl && editPl.data.mode === 'slots' ? curSlot : 'all'; }
+function renderPlaylist() {
+  const d = curDev();
+  if (!d) { $('plItems').innerHTML = '<p style="font-size:13px;color:var(--sub)">端末を登録すると編成できます。</p>'; $('slotTabs').innerHTML = ''; $('loopInfo').textContent = ''; $('addSelect').innerHTML = ''; return; }
+  if (!editPl || editPl.dev !== d.id) editPl = { dev: d.id, data: plOf(d) };
+  // 追加候補 = この施設の棚 ＋ 🌐共通の棚
+  const selAdd = $('addSelect').value;
+  $('addSelect').innerHTML = contents
+    .filter(c => !isExpired(c) && (!c.facility || c.facility === d.name))
+    .map(c => `<option value="${c.id}" ${c.id===selAdd?'selected':''}>${c.facility ? '' : '🌐 '}${c.type === 'image' ? '🖼' : '🎬'} ${c.title}</option>`).join('');
+  const useSlots = editPl.data.mode === 'slots';
+  $('slotMode').checked = useSlots;
+  if (useSlots && curSlot === 'all') curSlot = 'morning';
+  $('slotTabs').innerHTML = useSlots
+    ? [['morning','朝 6:00–11:00'],['day','昼 11:00–17:00'],['night','夜 17:00–24:00']]
+        .map(([k,l]) => `<button class="${k===curSlot?'active':''}" onclick="curSlot='${k}';renderPlaylist()">${l}</button>`).join('')
+    : '<span style="font-size:12px;color:var(--sub)">終日共通の編成（時間帯で分けない設定）</span>';
+  const ids = editPl.data[effSlot()];
+  const byId = Object.fromEntries(contents.map(c => [c.id, c]));
+  $('plItems').innerHTML = ids.map((id, i) => {
+    const c = byId[id]; if (!c) return '';
+    return `<div class="pl-item" style="${isExpired(c)?'opacity:.45':''}">
+      <span class="num">${i+1}</span>
+      <span class="tag">${c.type==='image'?'静止画':'動画'}</span>
+      <b>${c.title}${isExpired(c)?'（期限切れ・スキップされます）':''}</b>
+      <span style="color:var(--sub);font-size:12px">${c.adv || ''} ${c.type==='image' ? '｜ '+(c.dur||15)+'秒' : ''}</span>
+      <span><button class="mini" onclick="mv(${i},-1)">↑</button><button class="mini" onclick="mv(${i},1)">↓</button><button class="mini" onclick="rm(${i})">✕</button></span>
+    </div>`;
+  }).join('') || '<p style="font-size:13px;color:var(--sub)">この編成は空です。下から素材を追加してください。</p>';
+  const act = ids.map(id => byId[id]).filter(c => c && !isExpired(c));
+  const sec = act.reduce((a,c) => a + (c.type==='image' ? (c.dur||15) : 0), 0);
+  $('loopInfo').textContent = `有効 ${act.length}本${sec ? `（静止画 計${sec}秒＋動画実尺）` : ''}`;
+}
+function toggleMode() {
+  if (!editPl) return;
+  editPl.data.mode = $('slotMode').checked ? 'slots' : 'all';
+  renderPlaylist();
+}
+function mv(i, dlt) { const a = editPl.data[effSlot()], j = i + dlt; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; renderPlaylist(); }
+function rm(i) { editPl.data[effSlot()].splice(i, 1); renderPlaylist(); }
+function addToPl() { const id = $('addSelect').value; if (id && editPl) { editPl.data[effSlot()].push(id); renderPlaylist(); } }
+async function savePlaylist() {
+  if (!editPl) return;
+  const { error } = await sb.from('devices').update({ playlist: editPl.data }).eq('id', editPl.dev);
+  toast(error ? 'エラー: ' + error.message : '配信しました（端末には20秒以内に反映）');
+  load();
+}
+
+// ---- プレビュー ----
+let pvQueue = [], pvIdx = 0, pvTimer = null, pvActive = false;
+function startPreview() {
+  stopPreview(); pvActive = true;
+  const d = devices.find(x => x.id === $('pvDevice').value) || devices[0];
+  if (!d) { $('pvMsg').textContent = '端末が未登録です'; $('pvMsg').hidden = false; return; }
+  const pl = plOf(d);
+  const slot = pl.mode === 'slots' ? ($('pvSlot').value === 'all' ? 'day' : $('pvSlot').value) : 'all';
+  const byId = Object.fromEntries(contents.map(c => [c.id, c]));
+  pvQueue = (pl[slot] || []).map(id => byId[id]).filter(c => c && !isExpired(c));
+  pvIdx = 0;
+  if (!pvQueue.length) { $('pvVideo').hidden = true; $('pvImage').hidden = true; $('pvMsg').textContent = 'この編成は空です（保存済みの編成が対象）'; $('pvMsg').hidden = false; return; }
+  $('pvMsg').hidden = true;
+  pvNext(d);
+}
+function pvNext(d) {
+  if (!pvActive || !pvQueue.length) return;
+  clearTimeout(pvTimer);
+  const v = $('pvVideo'), im = $('pvImage');
+  pvIdx = pvIdx % pvQueue.length;
+  const c = pvQueue[pvIdx++];
+  $('pvLeft').textContent = `${d.name} / ${d.place || ''} ｜ ${c.title}`;
+  $('pvRight').textContent = `${((pvIdx-1) % pvQueue.length)+1} / ${pvQueue.length}`;
+  if (c.type === 'image') {
+    v.pause(); v.hidden = true; im.src = c.url; im.hidden = false;
+    pvTimer = setTimeout(() => pvNext(d), (c.dur || 15) * 1000);
+  } else {
+    im.hidden = true; v.hidden = false; v.src = c.url;
+    v.onended = () => pvNext(d);
+    v.onerror = () => { pvTimer = setTimeout(() => pvNext(d), 2000); };
+    v.play().catch(() => {});
+  }
+}
+function stopPreview() { pvActive = false; clearTimeout(pvTimer); const v = $('pvVideo'); if (v) { v.pause(); } }
+
+// ---- 放映ログ ----
+async function loadLogs() {
+  const [sum, hist] = await Promise.all([
+    sb.rpc('play_summary'),
+    sb.from('play_logs').select('*').order('played_at', { ascending: false }).limit(50),
+  ]);
+  if (hist.error) { toast('ログ取得エラー: ' + hist.error.message); return; }
+  logs = hist.data || [];
+  const devName = Object.fromEntries(devices.map(d => [d.id, `${d.name} / ${d.place || ''}`]));
+  $('logSummary').innerHTML = (sum.data || [])
+    .map(r => `<tr><td>${r.title || '(不明)'}</td><td>${r.today_cnt}回</td><td><b>${r.month_cnt}回</b></td><td style="color:var(--sub)">${r.last_month_cnt}回</td></tr>`).join('')
+    || '<tr><td colspan="4" style="color:var(--sub)">まだ放映記録がありません。</td></tr>';
+  $('logTable').innerHTML = logs.slice(0, 50).map(l => `<tr>
+    <td style="color:var(--sub)">${new Date(l.played_at).toLocaleString('ja-JP')}</td>
+    <td>${devName[l.device_id] || '(削除済み端末)'}</td>
+    <td>${l.title || '-'}</td>
+  </tr>`).join('') || '<tr><td colspan="3" style="color:var(--sub)">まだ放映記録がありません。</td></tr>';
+}
+
+// ---- 認証・起動 ----
+async function login() {
+  $('liMsg').textContent = 'ログイン中…';
+  const { error } = await sb.auth.signInWithPassword({ email: $('liEmail').value.trim(), password: $('liPass').value });
+  if (error) { $('liMsg').textContent = 'ログインできません: ' + error.message; return; }
+  location.reload();
+}
+async function logout() { await sb.auth.signOut(); location.reload(); }
+async function boot() {
+  if (!loadCfg()) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { showOnly('v-login'); return; }
+  authed = true;
+  $('logoutBtn').hidden = false;
+  showOnly('v-devices');
+  load(); setInterval(load, 15000);
+}
+boot();
+</script>
+</body>
+</html>
